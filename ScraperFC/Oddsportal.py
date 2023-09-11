@@ -19,12 +19,16 @@ class Oddsportal:
     """
 
     ####################################################################################################################
-    def __init__(self):
+    def __init__(self, scroll_speed=10, get_match_links_num_page_iters=2):
         options = Options()
         # options.headless = True
+        options.add_argument('--incognito')
         prefs = {"profile.managed_default_content_settings.images": 2} # don"t load images
         options.add_experimental_option("prefs", prefs)
         self.driver = webdriver.Chrome(options=options)
+        
+        self.scroll_speed = scroll_speed
+        self.get_match_links_num_page_iters = get_match_links_num_page_iters
 
     ####################################################################################################################
     def close(self):
@@ -41,75 +45,98 @@ class Oddsportal:
         source_comp_info = get_source_comp_info(year, league, "Oddsportal")
 
         if not year:
-            # current season
-            url = source_comp_info["Oddsportal"][league]["url"] + "/results/"
+            # Current season
+            url = source_comp_info["Oddsportal"][league]["url"] + "/results"
         else:
-            # previous season
-            url = source_comp_info["Oddsportal"][league]["url"] + f"-{year-1}-{year}/results/"
+            # Previous season
+            if league in ["MLS", "USL-Championship",]:
+                # Competitions that only span 1 calendar year
+                url = source_comp_info["Oddsportal"][league]["url"] + f"-{year}/results"
+            else:
+                # Competitions that span multiple calendar years
+                url = source_comp_info["Oddsportal"][league]["url"] + f"-{year-1}-{year}/results"
 
-        # Go the season's page, scroll down and back up to render everything
+        # Go the season's page, scroll down to render everything
         self.driver.get(url)
-        # loaded = False
-        # next_button, prev_button = None, None
-        # while not loaded:
-        #     soup = BeautifulSoup(self.driver.page_source, "html.parser") # update soup
-        #     next_button = [el for el in soup.find_all(["p","a"]) if "next"==el.text.lower()]
-        #     prev_button = [el for el in soup.find_all(["p","a"]) if "prev"==el.text.lower()]
-        #     if next_button or prev_button:
-        #         loaded = True
-        # Scroll down and back up
+        self.driver.refresh()
         offset = self.driver.execute_script("return window.pageYOffset")
-        html = self.driver.find_element(By.TAG_NAME, "html")
-        html.send_keys(Keys.PAGE_DOWN)
+        self.driver.find_element(By.TAG_NAME, "html").send_keys(Keys.PAGE_DOWN)
         while offset < self.driver.execute_script("return window.pageYOffset"):
             offset = self.driver.execute_script("return window.pageYOffset")
-            html.send_keys(Keys.PAGE_DOWN)
-        self.driver.execute_script("window.scrollTo(0,0)")
+            self.driver.find_element(By.TAG_NAME, "html").send_keys(Keys.PAGE_DOWN)
         
         # Get number of pages. If there are no page number elements, there is only 1 page (happens early in a new 
         # season, for example).
-        soup = BeautifulSoup(self.driver.page_source, "html.parser")
-        pagination_div_xpath = xpath_soup(soup.find_all("div", {"class": re.compile("pagination")})[-1])
-        _ = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.XPATH, pagination_div_xpath)))
-        soup = BeautifulSoup(self.driver.page_source, "html.parser")
-        page_num_els = soup.find_all("a", {"class": "pagination-link", "data-number": lambda tag: tag is not None})
-        max_page_num = max([int(el["data-number"]) for el in page_num_els]) if len(page_num_els) > 0 else 1
+        # soup = BeautifulSoup(self.driver.page_source, "html.parser")
+        # pagination_div_xpath = xpath_soup(soup.find_all("div", {"class": re.compile("pagination")})[-1])
+        # condition = EC.presence_of_element_located((By.XPATH, pagination_div_xpath))
+        condition = EC.presence_of_element_located((By.XPATH, "//div[contains(@class,\"pagination\")]"))
+        pagination_div_class = WebDriverWait(self.driver, 10).until(condition).get_attribute("class")
+        if "hidden" in pagination_div_class:
+            # Pagination div hidden, only 1 page of links.
+            max_page_num = 1
+        else:
+            # Pagination div not hidden, get the highest page number
+            # soup = BeautifulSoup(self.driver.page_source, "html.parser")
+            # page_num_els = soup.find_all("a", {"class": "pagination-link", "data-number": lambda tag: tag is not None})
+            page_num_els_query = "//a[contains(@class,\"pagination\") and boolean(@data-number)]"
+            page_num_els = self.driver.find_elements(By.XPATH, page_num_els_query)
+            while len(page_num_els) == 0:
+                # soup = BeautifulSoup(self.driver.page_source, "html.parser")
+                # page_num_els = soup.find_all("a", {"class": "pagination-link", "data-number": lambda tag: tag is not None})
+                page_num_els = self.driver.find_elements(By.XPATH, page_num_els_query)
+            max_page_num = max([int(el.get_attribute("data-number")) for el in page_num_els])
 
         # Iterate over all pages
         all_links = list()
-        for page_num in range(1, max_page_num+1):
+        for page_num in tqdm(range(1, max_page_num+1), desc=f"Gathering {year} {league} links"):
             page_links = []
             
-            # Go to the page link, refresh, scroll down and back up to render everything
-            self.driver.get(f"{url}/#/page/{page_num}")
-            self.driver.refresh()
-            # Scroll down and back up
-            offset = self.driver.execute_script("return window.pageYOffset")
-            html = self.driver.find_element(By.TAG_NAME, "html")
-            html.send_keys(Keys.PAGE_DOWN)
-            while offset < self.driver.execute_script("return window.pageYOffset"):
+            for i in range(self.get_match_links_num_page_iters):
+                # Go to the page link, refresh, scroll down and back up to render everything
+                self.driver.get(f"{url}/#/page/{page_num}")
+                self.driver.refresh()
+                self.driver.execute_script("window.scrollTo(0,0)") # scroll to the top
                 offset = self.driver.execute_script("return window.pageYOffset")
-                html.send_keys(Keys.PAGE_DOWN)
-            self.driver.execute_script("window.scrollTo(0,0)")
+                self.driver.find_element(By.TAG_NAME, "html").send_keys(Keys.PAGE_DOWN)
+                while offset < self.driver.execute_script("return window.pageYOffset"):
+                    offset = self.driver.execute_script("return window.pageYOffset")
+                    self.driver.find_element(By.TAG_NAME, "html").send_keys(Keys.PAGE_DOWN)
+                self.driver.execute_script("window.scrollTo(0,0)")
 
-            # Scroll down, collect links on the way
-            offset = self.driver.execute_script("return window.pageYOffset")
-            html.send_keys(Keys.PAGE_DOWN)
-            while offset < self.driver.execute_script("return window.pageYOffset"):
-                # Scroll down
+                # Scroll down again, collect links on the way
                 offset = self.driver.execute_script("return window.pageYOffset")
-                html.send_keys(Keys.PAGE_DOWN)
+                self.driver.execute_script(f"window.scrollBy(0,{self.scroll_speed})")
+                while offset < self.driver.execute_script("return window.pageYOffset"):
+                    # Scroll down
+                    offset = self.driver.execute_script("return window.pageYOffset")
+                    self.driver.execute_script(f"window.scrollBy(0,{self.scroll_speed})")
 
-                # Find any new links
-                soup = BeautifulSoup(self.driver.page_source, "html.parser")
-                page_links += [
-                    el["href"] for el in soup.find_all("a",{"class": re.compile("flex-col")}, href=True)
-                    if source_comp_info["Oddsportal"][league]["finder"] in el["href"]
-                    and el["href"] not in page_links
-                ]
+                    # Find any new links
+                    soup = BeautifulSoup(self.driver.page_source, "html.parser")
+                    finder = source_comp_info["Oddsportal"][league]["finder"]
+                    match_link_els = soup.find_all("a", {"class": re.compile("flex-col")}, href=re.compile(finder))
+                    page_links += [
+                        el["href"] for el in match_link_els if el["href"] not in page_links
+                        # if source_comp_info["Oddsportal"][league]["finder"] in el["href"]
+                        # and el["href"] not in page_links
+                    ]
+                    # finder = source_comp_info["Oddsportal"][league]["finder"]
+                    # match_link_els_query = f"//a[contains(@class, \"flex-col\") and contains(@href, \"{finder}\")]"
+                    # match_link_els = self.driver.find_elements(By.XPATH, match_link_els_query)
+                    # hrefs = [el.get_attribute("href") for el in match_link_els]
+                    # page_links += [h for h in hrefs if h not in page_links]
+                    print(
+                        f"{page_num}/{max_page_num}",
+                        int(offset),
+                        len(set(page_links)),
+                        end="\r",
+                    )
+                print()
+                self.driver.execute_script("window.scrollTo(0,0)") # scroll back to top
 
             # Append links from this page to list of all links
-            all_links += list(set(page_links))
+            all_links += page_links
 
         all_links = list(set(all_links)) # remove duplicates
         all_links = ["https://oddsportal.com" + l for l in all_links]
