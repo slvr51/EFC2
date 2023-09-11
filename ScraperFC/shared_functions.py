@@ -349,6 +349,21 @@ def get_source_comp_info(year, league, source):
             "MLS": {"first valid year": 1996,},
         },
         "Oddsportal": {
+            "Champions League": {
+                "url": "https://www.oddsportal.com/football/europe/champions-league",
+                "first valid year": 2004,
+                "finder": "champions-league",
+            },
+            "Europa League": {
+                "url": "https://www.oddsportal.com/football/europe/europa-league",
+                "first valid year": 2004,
+                "finder": "europa-league",
+            },
+            "Europa Conference League": {
+                "url": "https://www.oddsportal.com/football/europe/europa-conference-league",
+                "first valid year": 2022,
+                "finder": "europa-conference-league",
+            },
             "EPL": {
                 "url": "https://www.oddsportal.com/football/england/premier-league",
                 "first valid year": 2004,
@@ -374,6 +389,52 @@ def get_source_comp_info(year, league, source):
                 "first valid year": 2004,
                 "finder": "laliga",
             },
+            "La Liga 2": {
+                "url": "https://www.oddsportal.com/football/spain/laliga2",
+                "first valid year": 2004,
+                "finder": "laliga2",
+            },
+            "Bundesliga": {
+                "url": "https://www.oddsportal.com/football/germany/bundesliga",
+                "first valid year": 2004,
+                "finder": "bundesliga",
+            },
+            "2.Bundesliga": {
+                "url": "https://www.oddsportal.com/football/germany/2-bundesliga",
+                "first valid year": 2004,
+                "finder": "2-bundesliga",
+            },
+            "Serie A": {
+                "url": "https://www.oddsportal.com/football/italy/serie-a",
+                "first valid year": 2004,
+                "finder": "serie-a",
+            },
+            "Serie B": {
+                "url": "https://www.oddsportal.com/football/italy/serie-b",
+                "first valid year": 2004,
+                "finder": "serie-b",
+            },
+            "Ligue 1": {
+                "url": "https://www.oddsportal.com/football/france/ligue-1",
+                "first valid year": 2004,
+                "finder": "ligue-1",
+            },
+            "Ligue 2": {
+                "url": "https://www.oddsportal.com/football/france/ligue-2",
+                "first valid year": 2004,
+                "finder": "ligue-2",
+            },
+            "MLS": {
+                "url": "https://www.oddsportal.com/football/usa/mls",
+                "first valid year": 2004,
+                "finder": "mls",
+            },
+            "USL Championship": {
+                "url": "https://www.oddsportal.com/football/usa/usl-championship",
+                "first valid year": 2015,
+                "finder": "usl-championship",
+            },
+            
         },
     }
 
@@ -404,8 +465,17 @@ def get_source_comp_info(year, league, source):
     # Some source competition info is year-dependent. Handle that here.
     if source == "Oddsportal":
         if league == "La Liga" and year is not None and year < 2017:
-            source_comp_info["Oddsportal"]["La Liga"]["url"] = "https://www.oddsportal.com/football/spain/primera-division"
-            source_comp_info["Oddsportal"]["La Liga"]["finder"] = "primera-division"
+            source_comp_info[source][league]["url"] = "https://www.oddsportal.com/football/spain/primera-division"
+            source_comp_info[source][league]["finder"] = "primera-division"
+        if league == "La Liga 2" and year is not None and year < 2017:
+            source_comp_info[source][league]["url"] = "https://www.oddsportal.com/football/spain/segunda-division"
+            source_comp_info[source][league]["finder"] = "segunda-division"
+        if league == "Europa League" and year is not None and year < 2010:
+            source_comp_info[source][league]["url"] = "https://www.oddsportal.com/football/europe/uefa-cup"
+            source_comp_info[source][league]["finder"] = "uefa-cup"
+        if league == "USL Championship" and year is not None and year < 2019:
+            source_comp_info[source][league]["url"] = "https://www.oddsportal.com/football/usa/usl"
+            source_comp_info[source][league]["finder"] = "usl"
     
     return source_comp_info
 
