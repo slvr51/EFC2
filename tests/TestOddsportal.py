@@ -1,59 +1,33 @@
 import sys
-sys.path.append('..')
-from ScraperFC import Oddsportal, shared_functions # import local scraperfc
+sys.path.insert("..")
+from ScraperFC import Oddsportal # import local ScraperFC
+from shared_test_functions import get_random_league_seasons
 
-import unittest
-from unittest.mock import MagicMock, patch
-from selenium.webdriver.common.by import By
-from bs4 import BeautifulSoup
-import re
+num_links = {
+    "EPL": {
+        2004: 138, 2005: 377, 2006: 380, 2007: 376, 2008: 380, 2009: 380,
+        2010: 380, 2011: 380, 2012: 380, 2013: 380, 2014: 380, 2015: 380,
+        2016: 380, 2017: 380, 2018: 380, 2019: 380, 2020: 380, 2021: 380,
+        2022: 380, 2023: 380,
+    },
+}
 
-class TestOddsportal(unittest.TestCase):
-    
-    def setUp(self):
-        self.driver_mock = MagicMock()
-        self.driver_mock.page_source = ''
-        self.driver_mock.find_element.return_value = MagicMock()
-        self.driver_mock.execute_script.return_value = None
+class TestOddsportal:
 
-        self.instance = Oddsportal()
-        self.instance.driver = self.driver_mock
-        
-    def tearDown(self):
-        self.instance.close()
-        
-    @patch('bs4.BeautifulSoup')
-    def test_get_match_links(self, soup_mock):
-        year = 2022
-        league = 'EPL'
-        url = shared_functions.sources['Oddsportal'][league]['url'] + f'-{year-1}-{year}/results/'
-        
-        # Create a mock HTML response with links from different leagues
-        mock_html = '''
-            <html>
-                <body>
-                    <a class="flex-col" href="/football/england/premier-league-2021-2022/a-vs-b-1/">
-                        A vs B
-                    </a>
-                    <a class="flex-col" href="/football/england/championship-2021-2022/c-vs-d-1/">
-                        C vs D
-                    </a>
-                    <a class="flex-col" href="/football/spain/laliga-2021-2022/e-vs-f-1/">
-                        E vs F
-                    </a>
-                </body>
-            </html>
-        '''
-        self.driver_mock.page_source = mock_html
-        
-        links = self.instance.get_match_links(year, league)
-        print('**** ' + str(len(links)) + ' ****')
+    def test_get_match_links(self, sample_size):
+        samples = get_random_league_seasons("Oddsportal", sample_size)
+        op = Oddsportal()
+        for year, league in samples:
+            links = op.get_match_links(year, league)
             
-        self.driver_mock.get.assert_called_once_with(url)
-        self.driver_mock.find_element.assert_called_once_with(By.TAG_NAME, 'html')
-        self.driver_mock.execute_script.assert_called_with('return window.pageYOffset;')
-        # self.driver_mock.execute_script.assert_called_with('arguments[0].scrollIntoView()') #, MagicMock())
-        # self.driver_mock.execute_script.assert_called_with('arguments[0].click()')# , MagicMock())
+            assert len(links) = num_links[league][year], "wrong number of links"
+        op.close()
         
-        self.assertEqual(links, ['https://oddsportal.com/football/england/premier-league-2021-2022/a-vs-b-1/'])
-
+            
+    # def test_scrape_season_odds(self, sample_size):
+    #     samples = get_random_league_seasons("Oddsportal", sample_size)
+    #     op = Oddsportal()
+    #     for year, league in samples:
+    #         season_odds = op.scrape_season_odds(year, league)
+    #         assert season_odds.shape[0] = num_links[league][year], "wrong number of matches"
+    #     op.close()
