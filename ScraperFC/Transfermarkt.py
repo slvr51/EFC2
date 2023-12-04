@@ -24,6 +24,8 @@ class Transfermarkt():
 
         # Deal with Accept All popup
         self.driver.get('https://www.transfermarkt.us')
+        # Define a default header for Requests
+        self._HEADERS = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36'}
         # Switch to the iframe popup
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
         iframe = self.driver.find_element(
@@ -35,7 +37,7 @@ class Transfermarkt():
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
         accept_all_button = self.driver.find_element(
             By.XPATH,
-            xpath_soup(soup.find('button', {'aria-label': 'ACCEPT ALL'}))
+            xpath_soup(soup.find('button', {'aria-label': 'Accept and Continue'}))
         )
         self.driver.execute_script('arguments[0].click()', accept_all_button)
         # Switch back to the main window
@@ -198,6 +200,150 @@ class Transfermarkt():
             df = pd.concat([df, new_row.to_frame().T], axis=0, ignore_index=True)
         return df
     
+    
+    ############################################################################
+    def team_transfer_history(self, URL):
+        response = requests.get(URL, headers=self._HEADERS)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        dfs = []  # To store individual dataframes
+        
+        # Get the club name
+        observe_club = soup.find(class_='data-header__headline-container').get_text(strip=True)
+        # Loop through each 'large-6' div and then find 'box' inside
+        for large_div in soup.find_all('div', class_='large-6'):
+            for box in large_div.find_all('div', class_='box'):
+
+                # Extract content from 'content-box-headline' and split it
+                header = box.find('h2', class_='content-box-headline').text.strip().split(' ')
+                arrival_departure, season = header[0], header[1]
+                table = box.find('table')
+                if not table:
+                    continue
+
+                # Extract table data
+                try:
+                    rows = box.find('table').find_all('tr')
+                    table_data = []
+                    for row in rows[1:]:  # Skip the header
+                        columns = row.find_all('td')
+                        player_data = [col.text.strip() for col in columns]
+                        if len(player_data)>1:
+                            player_data.pop(1)
+                        table_data.append(player_data)
+
+                    # Extract column headers; this assumes that the first 'tr' contains the header
+                    headers = [header.text.strip() for header in rows[0].find_all('th')]
+
+                    # Convert to DataFrame
+                    df = pd.DataFrame(table_data[0:len(table_data)-2], columns=headers)
+                    df['Arrival/Departure'] = arrival_departure
+                    df['Season'] = season
+                    df['Observe Club'] = observe_club
+
+                    dfs.append(df)
+            
+                except ValueError as e:
+                    pass
+        final_df = pd.concat(dfs, ignore_index=True)
+        return final_df
+    
+
+    ############################################################################ 
+    @staticmethod
+    def transfer_value_extract(v):
+        v = v[v.find("€")+1:]
+        if v[-1] == "m":
+            return float(v[:-1]) * 1000000
+        elif v[-1] == "k":
+            return float(v[:-1]) * 1000
+        else:
+            return float(v[:-1].replace(" ", ""))
+
+
+    ############################################################################  
+    @staticmethod              
+    def find_all_transfer_url(url):
+        return url.replace("startseite", "alletransfers").split('saison_id')[0]
+    
+
+    ############################################################################
+    def raw_league_transfer_history(self, year, league):
+        club_links = [self.find_all_transfer_url(x) for x in self.get_club_links(year, league)]
+        dfs = []
+        for URL in club_links:
+            df = self.team_transfer_history(URL)
+            dfs.append(df)
+        final_df = pd.concat(dfs, ignore_index=True)
+        return final_df
+
+
+    ############################################################################
+    def format_transfer_history(self, history):
+        Type = []
+        Value = []
+        for v in history["Transfer sum"].values:
+            if "Loan fee" in v:
+                Type.append("Loan")
+                Value.append(self.transfer_value_extract(v))
+            elif "free transfer" in v:
+                Type.append("Transfer")
+                Value.append(0)
+            elif "?" in v:
+                Type.append("Unknown")
+                Value.append(0)
+            elif "-" in v:
+                Type.append("Transfer")
+                Value.append(0)
+            elif "End of loan" in v:
+                Type.append("End of Loan")
+                Value.append(0)
+            elif "loan transfer" in v:
+                Type.append("Loan")
+                Value.append(0)
+            elif v == "":
+                Type.append("Unknown")
+                Value.append(0)
+            elif "draft" in v:
+                Type.append("Transfer")
+                Value.append(0)
+            else:
+                Type.append("Transfer")
+                Value.append(self.transfer_value_extract(v))
+        history["Type"] = Type
+        history["Value"] = Value
+        return history
+    
+    ############################################################################
+    def get_league_transfer_history(self, year, league):
+        """
+        Gathers and formats transfer history for a specified football league and given season. 
+        This method consolidates individual team transfer data into a league-wide perspective, 
+        providing insights into player movements, types of transfers, and transfer values.
+
+        Args
+        ----
+        year : int
+            This parameter helps identify the relevant season of league.
+            The year in which the football season ends. 
+            For instance, for the 2022/23 season, the year would be 2023. 
+        league : str
+            The name of the football league from which transfer data is to be extracted. 
+            The available leagues can be found in 'shared_functions.py', and this parameter 
+            specifies which league's transfer data is to be analyzed.
+
+        Returns
+        -------
+        : Pandas DataFrame
+            A DataFrame containing detailed transfer information for each player in the specified league 
+            and season. Each row corresponds to a player, encompassing data such as transfer type, 
+            transfer value, and other relevant details extracted from their Transfermarkt player profile. 
+            This structured format facilitates further analysis of transfer trends and patterns in the league.
+        """
+        history = self.raw_league_transfer_history(year, league)
+        return self.format_transfer_history(history)
+
+   
 
 ################################################################################
 class TransfermarktPlayer():
@@ -293,4 +439,5 @@ class TransfermarktPlayer():
         ).drop(
             columns=['']
         )
+
         
